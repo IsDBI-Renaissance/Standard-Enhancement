@@ -79,6 +79,8 @@ cp .env.example .env
 
 ## Usage
 
+### CLI Usage
+
 For the full system (requires OpenAI API key and SerpAPI key):
 
 ```bash
@@ -91,12 +93,74 @@ For the demonstration version (no API keys required):
 python demo_main.py --input "path/to/standard.txt" --output "output"
 ```
 
+### API Server
+
+You can also run the system as a FastAPI server:
+
+```bash
+python server.py
+```
+
+This will start a server at `http://localhost:8000` with the following endpoints:
+
+- **POST /enhance**: Submit a standard text for enhancement
+- **GET /health**: Check the health of the server
+
+Example API request using curl:
+
+```bash
+curl -X POST "http://localhost:8000/enhance" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "standard_text": "Your standard text here...",
+    "max_retries": 5,
+    "default_quality": 60
+  }'
+```
+
+Example API request using Python:
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/enhance",
+    json={
+        "standard_text": "Your standard text here...",
+        "max_retries": 5,
+        "default_quality": 60
+    }
+)
+
+if response.status_code == 200:
+    result = response.json()
+    enhanced_standard = result["enhanced_standard"]
+    audit_trail = result["audit_trail"]
+    
+    # Do something with the results
+    print(f"Enhanced standard length: {len(enhanced_standard)}")
+    print(f"Audit trail length: {len(audit_trail)}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
+
 ## Output
 
-The system produces two main output files:
+The system produces the following outputs:
+
+### CLI Output
+
+When using the CLI interface, the system produces two main output files:
 
 1. **enhanced_standard.md**: The enhanced version of the AAOIFI standard
 2. **audit_trail.md**: A detailed audit trail of the enhancement process
+
+### API Output
+
+When using the API, the response includes:
+
+1. **enhanced_standard**: The enhanced version of the AAOIFI standard text
+2. **audit_trail**: A detailed audit trail of the enhancement process
 
 ## Requirements
 
