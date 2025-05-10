@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_2.max-1000x1000.png" width="250" alt="Gemini Logo" />
+  <img src="public/Mizanex Logo.png" width="100" alt="FastAPI Logo" />
+  <img>
+  <img src="https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png" width="250" alt="FastAPI Logo" />
+  
+
 </p>
 
 # 🌙 AAOIFI Standards Enhancement System
