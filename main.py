@@ -10,6 +10,7 @@ import sys
 from dotenv import load_dotenv
 
 from pipeline.orchestrator import AAOIFIOrchestrator
+from utils.gemini_client import GeminiClient
 
 # Load environment variables
 load_dotenv()
@@ -70,6 +71,23 @@ def main():
         default=60,
         help="Default quality score to use when parsing fails (default: 60)"
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=os.getenv("GEMINI_MODEL", "gemini-1.5-pro"),
+        help="Gemini model to use for text generation"
+    )
+    parser.add_argument(
+        "--disable-rag",
+        action="store_true",
+        help="Disable Retrieval-Augmented Generation (RAG is enabled by default)"
+    )
+    parser.add_argument(
+        "--rag-data-dir",
+        type=str,
+        default="data",
+        help="Directory containing PDF documents for RAG (default: data)"
+    )
     
     args = parser.parse_args()
     
@@ -84,6 +102,32 @@ def main():
         logger.error(f"Error: Input file {args.input} does not exist")
         return 1
     
+    # Initialize Gemini client
+    try:
+        gemini_client = GeminiClient()
+        logger.info(f"Initialized Gemini client with model: {gemini_client.model_name}")
+    except ValueError as e:
+        logger.error(f"Failed to initialize Gemini client: {str(e)}")
+        return 1
+    
+    # Determine if RAG should be used (enabled by default, unless explicitly disabled)
+    use_rag = not args.disable_rag
+    
+    # Check if RAG is enabled and PDFs exist
+    if use_rag:
+        pdf_dir = os.path.abspath(args.rag_data_dir)
+        if not os.path.exists(pdf_dir):
+            logger.warning(f"RAG data directory {pdf_dir} does not exist, creating it")
+            os.makedirs(pdf_dir, exist_ok=True)
+        
+        pdf_files = [f for f in os.listdir(pdf_dir) if f.lower().endswith('.pdf')]
+        if not pdf_files:
+            logger.warning(f"No PDF files found in {pdf_dir}, RAG will not be used effectively")
+        else:
+            logger.info(f"Found {len(pdf_files)} PDF files for RAG: {', '.join(pdf_files)}")
+    else:
+        logger.info("RAG is explicitly disabled by command line flag")
+    
     # Read input file
     with open(args.input, 'r', encoding='utf-8') as f:
         standard_text = f.read()
@@ -96,22 +140,39 @@ def main():
     # Initialize the orchestrator with the configured parameters
     orchestrator = AAOIFIOrchestrator(
         max_retries=args.max_retries,
-        default_quality_score=args.default_quality
+        default_quality_score=args.default_quality,
+        llm_client=gemini_client,
+        use_rag=use_rag,
+        rag_data_dir=args.rag_data_dir if use_rag else None
     )
     
     # Process the standard
     try:
         result = orchestrator.process(standard_text)
         
-        # Save the result
+        # Save the enhanced standard as markdown
         output_path = os.path.join(args.output, "enhanced_standard.md")
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(result["final_output"])
         
-        # Save the audit trail
+        # Save the audit trail exactly as formatted by the orchestrator
         audit_path = os.path.join(args.output, "audit_trail.md")
         with open(audit_path, 'w', encoding='utf-8') as f:
             f.write(result["audit_trail"])
+        
+        # Add RAG usage information to the audit
+        if use_rag:
+            rag_path = os.path.join(args.output, "rag_usage.md")
+            with open(rag_path, 'w', encoding='utf-8') as f:
+                f.write("# RAG System Usage Report\n\n")
+                f.write(f"PDF directory: {pdf_dir}\n\n")
+                f.write(f"PDF files available: {len(pdf_files)}\n\n")
+                f.write("## Files Used:\n\n")
+                for file in pdf_files:
+                    f.write(f"- {file}\n")
+                f.write("\n## RAG Integration:\n\n")
+                f.write("The RAG system was used to augment the Enhancer and Validator components with relevant information from the AAOIFI standards documentation.\n")
+            logger.info(f"RAG usage report saved to {rag_path}")
         
         # Save quality scores report if debug mode is enabled
         if args.debug > 0:

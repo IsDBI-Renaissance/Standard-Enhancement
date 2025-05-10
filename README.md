@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png" width="250" alt="FastAPI Logo" />
+  <img src="https://storage.googleapis.com/gweb-uniblog-publish-prod/images/gemini_2.max-1000x1000.png" width="250" alt="Gemini Logo" />
 </p>
 
 # 🌙 AAOIFI Standards Enhancement System
@@ -58,8 +58,8 @@
 
 ### Knowledge Integration
 
-- 🌐 Retrieves authoritative references from external sources
-- 📖 Incorporates relevant scholarly opinions and rulings
+- 🌐 Retrieves authoritative references from integrated PDF documents
+- 📖 Incorporates relevant scholarly opinions and rulings through RAG
 - 🔗 Links standards to authoritative Islamic finance references
 
 ## System Architecture
@@ -77,36 +77,32 @@ The system is composed of several specialized agents that work together in a pip
    - **Enhancer**: Improves language, clarity, completeness, and usability.
    - **Validator**: Final QA stage before output. Verifies the enhanced standard is coherent, complete, and compliant.
 
-3. **Knowledge Retrieval Tool**: Supports the pipeline by fetching authoritative references from external sources when needed.
+3. **RAG System**: Supports the pipeline by retrieving relevant information from PDF documents to enhance the quality of outputs.
 
 ## Implementation
 
 This project uses:
 
-- **LangGraph**: For building the multi-agent orchestration graph with conditional transitions
-- **LangChain**: For integrating with LLMs and building agent components
-- **OpenAI**: Providing the LLM models for analysis and enhancement
-- **SerpAPI**: For web searches to retrieve external knowledge
+- **Flask**: For building the REST API server
+- **Google Gemini API**: Providing the LLM models for analysis and enhancement
+- **RAG (Retrieval-Augmented Generation)**: For augmenting LLM outputs with domain-specific knowledge
+- **PyPDF2**: For processing PDF documents containing AAOIFI standards and related information
 
 ## Project Structure
 
 ```
-├── main.py                    # Main entry point
-├── demo_main.py               # Simplified demo version
+├── main.py                    # Main CLI entry point
+├── server.py                  # Flask server for API access
 ├── pipeline/                  # Core pipeline components
-│   ├── orchestrator.py        # Orchestrator implementation
-│   ├── agents/                # Agent implementations
-│   │   ├── base_agent.py      # Base agent class
-│   │   ├── preprocessor.py    # Preprocessor agent
-│   │   ├── reviewer.py        # Reviewer agent
-│   │   ├── enhancer.py        # Enhancer agent
-│   │   └── validator.py       # Validator agent
-│   ├── knowledge_retrieval/   # Knowledge retrieval components
-│   │   └── retriever.py       # Knowledge retriever implementation
-│   ├── models/                # Data models
-│   │   └── models.py          # Pydantic models for the pipeline
-│   └── utils/                 # Utility functions
-│       └── helpers.py         # Helper functions
+│   └── orchestrator.py        # Orchestrator implementation
+├── services/                  # Service components
+│   └── llm_service.py         # LLM service using Gemini API
+├── utils/                     # Utility functions
+│   ├── gemini_client.py       # Gemini API client
+│   ├── pdf_processor.py       # PDF document processor
+│   ├── rag_system.py          # RAG implementation
+│   └── vector_store.py        # Vector storage for document retrieval
+├── data/                      # Storage for PDF documents used by RAG
 ```
 
 ## Getting Started
@@ -157,12 +153,18 @@ Create a `.env` file with the following variables:
 
 ```env
 # API Keys
-OPENAI_API_KEY=your_openai_api_key
-SERPAPI_API_KEY=your_serpapi_api_key
+GEMINI_API_KEY=your_gemini_api_key
+
+# Model Configuration
+GEMINI_MODEL=gemini-1.5-pro
 
 # Optional configurations
-ENHANCEMENT_MIN_SCORE=60
-MAX_RETRY_ATTEMPTS=5
+DEFAULT_QUALITY_SCORE=60
+MAX_RETRIES=5
+TEMPERATURE=0.7
+MAX_OUTPUT_TOKENS=2048
+TOP_P=0.9
+TOP_K=40
 ```
 
 ## Usage
@@ -171,21 +173,22 @@ You can use the AAOIFI Standards Enhancement System in two ways: through the com
 
 ### CLI Usage
 
-For the full system (requires OpenAI API key and SerpAPI key):
+For the full system (requires Gemini API key):
 
 ```bash
+# Basic usage (RAG enabled by default)
 python main.py --input "path/to/standard.txt" --output "output"
-```
 
-For the demonstration version (no API keys required):
+# Disable RAG if needed
+python main.py --input "path/to/standard.txt" --output "output" --disable-rag
 
-```bash
-python demo_main.py --input "path/to/standard.txt" --output "output"
+# Specify a custom directory for PDF documents
+python main.py --input "path/to/standard.txt" --output "output" --rag-data-dir "custom_docs"
 ```
 
 ### API Server
 
-You can also run the system as a FastAPI server:
+You can also run the system as a Flask server:
 
 ```bash
 python server.py
@@ -194,7 +197,7 @@ python server.py
 This will start a server at `http://localhost:8000` with the following endpoints:
 
 - **POST /enhance**: Submit a standard text for enhancement
-- **GET /health**: Check the health of the server
+- **GET /**: Health check endpoint for the server
 
 #### Example API Request Using cURL
 
@@ -240,10 +243,12 @@ The system produces the following outputs:
 
 ### CLI Output
 
-When using the CLI interface, the system produces two main output files:
+When using the CLI interface, the system produces several output files:
 
 1. **enhanced_standard.md**: The enhanced version of the AAOIFI standard
 2. **audit_trail.md**: A detailed audit trail of the enhancement process
+3. **rag_usage.md**: Information about the RAG system usage (when RAG is enabled)
+4. **quality_scores.md**: Detailed quality scores for each pipeline stage (when debug mode is enabled)
 
 ### API Output
 
@@ -261,13 +266,13 @@ You can run the application using Docker:
 docker build -t standard-enhancement-api .
 
 # Run the Docker container
-docker run -p 8000:8000 -e OPENAI_API_KEY=your_openai_api_key -e SERPAPI_API_KEY=your_serpapi_api_key standard-enhancement-api
+docker run -p 8000:8000 -e GEMINI_API_KEY=your_gemini_api_key standard-enhancement-api
 ```
 
 Alternatively, you can set up environment variables in a .env file and use:
 
 ```bash
-docker run -p 8000:8000 --env-file .env aaoifi-standard-api
+docker run -p 8000:8000 --env-file .env standard-enhancement-api
 ```
     
 ## Contact

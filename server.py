@@ -1,18 +1,16 @@
 """
-FastAPI server for the AAOIFI Standards Enhancement System.
+Flask server for the AAOIFI Standards Enhancement System.
 This file provides a REST API interface to the standard enhancement pipeline.
 """
 
 import os
 import logging
-import uvicorn
 from typing import Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Body
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 from pipeline.orchestrator import AAOIFIOrchestrator
+from utils.gemini_client import GeminiClient
 
 # Load environment variables
 load_dotenv()
@@ -25,38 +23,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger('server')
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="AAOIFI Standards Enhancement API",
-    description="API for enhancing AAOIFI standards through a multi-agent pipeline",
-    version="1.0.0"
-)
-
-# Define request and response models
-class EnhancementRequest(BaseModel):
-    standard_text: str = Field(..., description="The AAOIFI standard text to analyze")
-    max_retries: Optional[int] = Field(5, description="Maximum number of retries before giving up")
-    default_quality: Optional[int] = Field(60, description="Default quality score to use when parsing fails")
-
-class EnhancementResponse(BaseModel):
-    enhanced_standard: str = Field(..., description="The enhanced standard text")
-    audit_trail: str = Field(..., description="Audit trail of the enhancement process")
-
-# Initialize the orchestrator at server startup
-orchestrator = None
-
-@app.on_event("startup")
-async def startup_event():
-    global orchestrator
+# Initialize Gemini client and orchestrator at startup
+def initialize_orchestrator():
+    """Initialize the orchestrator."""
     logger.info("Initializing AAOIFI Standards Enhancement orchestrator")
-    orchestrator = AAOIFIOrchestrator(
-        max_retries=5,
-        default_quality_score=60
-    )
-    logger.info("Server startup complete")
+    
+    try:
+        # Initialize Gemini client
+        gemini_client = GeminiClient()
+        logger.info(f"Initialized Gemini client with model: {gemini_client.model_name}")
+        
+        # Initialize the orchestrator with RAG enabled by default
+        orchestrator = AAOIFIOrchestrator(
+            max_retries=5,
+            default_quality_score=60,
+            llm_client=gemini_client,
+            use_rag=True,
+            rag_data_dir="data"
+        )
+        
+        logger.info("Orchestrator initialization complete")
+        
+        # Check if RAG is available
+        if hasattr(orchestrator.llm_service, 'has_rag'):
+            logger.info(f"RAG system available: {orchestrator.llm_service.has_rag}")
+        else:
+            logger.warning("RAG system not available")
+            
+        return orchestrator
+    except Exception as e:
+        logger.error(f"Error initializing orchestrator: {str(e)}", exc_info=True)
+        raise
 
-@app.post("/enhance", response_model=EnhancementResponse)
-async def enhance_standard(request: EnhancementRequest = Body(...)):
+# Initialize Flask app
+app = Flask(__name__)
+
+# Initialize the orchestrator at module load time
+orchestrator = initialize_orchestrator()
+
+@app.route('/enhance', methods=['POST'])
+def enhance_standard():
     """
     Enhance an AAOIFI standard by processing it through the multi-agent pipeline.
     
@@ -72,46 +78,68 @@ async def enhance_standard(request: EnhancementRequest = Body(...)):
     
     if not orchestrator:
         logger.error("Orchestrator not initialized")
-        raise HTTPException(status_code=500, detail="Server not properly initialized")
+        return jsonify({"error": "Server not properly initialized"}), 500
     
-    if not request.standard_text:
+    # Get request data
+    data = request.get_json()
+    
+    if not data or 'standard_text' not in data:
         logger.error("No standard text provided")
-        raise HTTPException(status_code=400, detail="Standard text cannot be empty")
+        return jsonify({"error": "Standard text cannot be empty"}), 400
+    
+    standard_text = data['standard_text']
+    max_retries = data.get('max_retries', orchestrator.max_retries)
+    default_quality = data.get('default_quality', orchestrator.default_quality_score)
     
     logger.info("Received enhancement request")
-    logger.info(f"Input text length: {len(request.standard_text)} characters")
+    logger.info(f"Input text length: {len(standard_text)} characters")
     
     # Update orchestrator configuration if provided in the request
-    if request.max_retries is not None and request.max_retries != orchestrator.max_retries:
-        orchestrator.max_retries = request.max_retries
+    if max_retries != orchestrator.max_retries:
+        orchestrator.max_retries = max_retries
     
-    if request.default_quality is not None and request.default_quality != orchestrator.default_quality_score:
-        orchestrator.default_quality_score = request.default_quality
+    if default_quality != orchestrator.default_quality_score:
+        orchestrator.default_quality_score = default_quality
     
     try:
         # Process the standard text
-        result = orchestrator.process(request.standard_text)
+        result = orchestrator.process(standard_text)
         
         # Prepare the response
-        response = EnhancementResponse(
-            enhanced_standard=result["final_output"],
-            audit_trail=result["audit_trail"]
-        )
+        response = {
+            "enhanced_standard": result["final_output"],
+            "audit_trail": result["audit_trail"]
+        }
         
         logger.info("Enhancement completed successfully")
-        return response
+        return jsonify(response)
     
     except Exception as e:
         logger.error(f"Error enhancing standard: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error processing standard: {str(e)}")
+        return jsonify({"error": f"Error processing standard: {str(e)}"}), 500
 
-@app.get("/")
-async def health_check():
+@app.route('/', methods=['GET'])
+def health_check():
     """
     Health check endpoint to verify that the server is running.
     """
-    return {"status": "healthy", "service": "AAOIFI Standards Enhancement API"}
+    rag_status = "enabled"
+    if orchestrator and hasattr(orchestrator.llm_service, 'has_rag'):
+        rag_status = "active" if orchestrator.llm_service.has_rag else "disabled"
+    
+    return jsonify({
+        "status": "healthy", 
+        "service": "AAOIFI Standards Enhancement API",
+        "rag": rag_status
+    })
 
 if __name__ == "__main__":
-    # Run the server with uvicorn when this file is executed directly
-    uvicorn.run("server:app", host="localhost", port=8000, reload=True)
+    # Set port from environment variable or default to 8000
+    port = int(os.getenv("PORT", 8000))
+    
+    # Run the Flask app with debug enabled in development
+    debug_mode = os.getenv("FLASK_ENV", "production") == "development"
+    
+    # Run the server
+    logger.info(f"Starting server on port {port}, debug mode: {debug_mode}")
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)
