@@ -1,0 +1,44 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+*.env
+
+# Docker-related files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Test and coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+*.cover
+*.py,cover
+
+# FastAPI specific
+*.db
+instance/
+*.sqlite3
+
+# Static files
+staticfiles/
+mediafiles/
